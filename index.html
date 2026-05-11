@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>RAG 智能问答</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+        body {
+            background: #f5f5f5;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .chat-box {
+            height: 600px;
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .message {
+            margin-bottom: 15px;
+            padding: 10px 15px;
+            border-radius: 10px;
+            max-width: 75%;
+        }
+        .user {
+            background: #007bff;
+            color: white;
+            margin-left: auto;
+        }
+        .ai {
+            background: #e9e9eb;
+            color: #333;
+        }
+        .input-box {
+            display: flex;
+            gap: 10px;
+        }
+        input {
+            flex: 1;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 10px;
+            font-size: 16px;
+        }
+        button {
+            padding: 15px 25px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-box" id="chatBox"></div>
+    <div class="input-box">
+        <input type="text" id="questionInput" placeholder="输入你的问题...">
+        <button onclick="sendQuestion()">发送</button>
+    </div>
+
+    <script>
+        async function sendQuestion() {
+            let input = document.getElementById("questionInput");
+            let question = input.value.trim();
+            if (!question) return;
+
+            // 显示用户消息
+            let chatBox = document.getElementById("chatBox");
+            chatBox.innerHTML += `<div class="message user">${question}</div>`;
+            input.value = "";
+
+            // 调用后端接口
+            try {
+                let res = await fetch("http://127.0.0.1:8000/ask", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ question: question })
+                });
+                let data = await res.json();
+
+                // 显示AI回答
+                chatBox.innerHTML += `<div class="message ai">${data.answer}</div>`;
+                chatBox.scrollTop = chatBox.scrollHeight;
+            } catch (err) {
+                chatBox.innerHTML += `<div class="message ai">请求失败，请检查后端服务是否启动</div>`;
+            }
+        }
+    </script>
+</body>
+</html>

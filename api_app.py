@@ -5,6 +5,7 @@ from dotenv import load_dotenv  #加载API key
 import os                       #加载环境变量
 import chromadb                 #向量数据库
 from dashscope import Generation, TextEmbedding #通义大模型 + 嵌入模型
+from fastapi.middleware.cors import CORSMiddleware
 
 # 2.加载配置 + 初始化接口服务
 # 加载环境变量
@@ -13,6 +14,15 @@ api_key = os.getenv("DASHSCOPE_API_KEY")
 
 # 初始化FastAPI应用
 app = FastAPI(title="RAG智能体问答接口",version="1.0")
+
+# 新增：添加跨域中间件
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 3.连接/初始化向量数据库
 client = chromadb.PersistentClient("/chroma_db")
