@@ -1,102 +1,78 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>RAG 智能问答</title>
+    <meta charset="utf-8">
+    <title>流式AI聊天</title>
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-            font-family: Arial, sans-serif;
-        }
-        body {
-            background: #f5f5f5;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        .chat-box {
-            height: 600px;
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            overflow-y: auto;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        .message {
-            margin-bottom: 15px;
-            padding: 10px 15px;
-            border-radius: 10px;
-            max-width: 75%;
-        }
-        .user {
-            background: #007bff;
-            color: white;
-            margin-left: auto;
-        }
-        .ai {
-            background: #e9e9eb;
-            color: #333;
-        }
-        .input-box {
-            display: flex;
-            gap: 10px;
-        }
-        input {
-            flex: 1;
-            padding: 15px;
-            border: 1px solid #ddd;
-            border-radius: 10px;
-            font-size: 16px;
-        }
-        button {
-            padding: 15px 25px;
-            background: #007bff;
-            color: white;
-            border: none;
-            border-radius: 10px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:hover {
-            background: #0056b3;
-        }
+        body { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .message { margin: 10px 0; padding: 10px; border-radius: 8px; }
+        .user { background: #007bff; color: white; text-align: right; }
+        .ai { background: #e9e9eb; color: black; }
+        #chat-box { height: 600px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-bottom: 10px; }
+        #question { width: 700px; padding: 8px; }
+        button { padding: 8px 16px; }
     </style>
 </head>
 <body>
-    <div class="chat-box" id="chatBox"></div>
-    <div class="input-box">
-        <input type="text" id="questionInput" placeholder="输入你的问题...">
-        <button onclick="sendQuestion()">发送</button>
-    </div>
+    <div id="chat-box"></div>
+    <input type="text" id="question" placeholder="输入问题...">
+    <button onclick="sendMessage()">发送</button>
 
     <script>
-        async function sendQuestion() {
-            let input = document.getElementById("questionInput");
-            let question = input.value.trim();
+        const sessionId = "user1";
+
+        function appendMessage(text, sender) {
+            const div = document.createElement("div");
+            div.className = "message " + sender;
+            div.textContent = text;
+            document.getElementById("chat-box").appendChild(div);
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById("question");
+            const question = input.value.trim();
             if (!question) return;
 
-            // 显示用户消息
-            let chatBox = document.getElementById("chatBox");
-            chatBox.innerHTML += `<div class="message user">${question}</div>`;
+            // 追加用户消息
+            appendMessage(question, "user");
             input.value = "";
 
-            // 调用后端接口
+            // 创建空的AI消息框，用于流式填充
+            const chatBox = document.getElementById("chat-box");
+            const aiMsg = document.createElement("div");
+            aiMsg.className = "message ai";
+            chatBox.appendChild(aiMsg);
+
             try {
-                let res = await fetch("http://127.0.0.1:8000/ask", {
+                const res = await fetch("http://127.0.0.1:8000/ask_stream", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ question: question })
+                    body: JSON.stringify({
+                        question: question,
+                        session_id: sessionId
+                    })
                 });
-                let data = await res.json();
 
-                // 显示AI回答
-                chatBox.innerHTML += `<div class="message ai">${data.answer}</div>`;
-                chatBox.scrollTop = chatBox.scrollHeight;
-            } catch (err) {
-                chatBox.innerHTML += `<div class="message ai">请求失败，请检查后端服务是否启动</div>`;
+                // 流式读取核心代码
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let fullText = "";
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    // 每收到一段文字就实时更新
+                    const text = decoder.decode(value, { stream: true });
+                    fullText += text;
+                    aiMsg.textContent = fullText;
+
+                    // 自动滚动到底部
+                    chatBox.scrollTop = chatBox.scrollHeight;
+                }
+
+            } catch (e) {
+                aiMsg.textContent = "连接失败：" + e.toString();
             }
         }
     </script>
