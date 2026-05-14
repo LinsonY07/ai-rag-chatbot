@@ -1,3 +1,4 @@
+"""
 import logging
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -85,11 +86,11 @@ def rag_ask_sync(question, history_message = None):
             messages.extend(history_message)
 
         # 加上当前问题和上下文
-        prompt = f"""
+        prompt = f""
 请只根据参考内容回答，不要编造。
 参考：{refs}
 问题：{question}
-"""
+""
         messages.append({"role": "user", "content":prompt})
         
         # 调用大模型（同步调用）
@@ -154,11 +155,11 @@ def rag_ask_stream(question, history_message = None):
         if history_message:
             messages.extend(history_message)
 
-        prompt = f"""
+        prompt = f""
 请只根据参考内容回答问题，不要编造。
 参考内容：{refs}
 用户问题：{question}
-"""
+""
         messages.append({"role":"user","content":prompt})
         
         # 检查模型收到的消息是否有重复
@@ -275,3 +276,4 @@ async def create_ask_stream(req:QuestionRquest):
                 chat_history[sid] = chat_history[sid][-20:]
             
     return StreamingResponse(generate(), media_type="text/plain")
+"""
