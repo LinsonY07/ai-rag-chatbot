@@ -18,22 +18,23 @@ chat_memory = {}
 async def ask_stream(request: Request):
     try:
         data = await request.json()
-        question = data.get("question", "")
+        question = data.get("question", "").strip()
         session_id = data.get("session_id", "default")
 
         logger.info(f"用户提问: {question}")
-
+        # 防御：空问题直接返回友好提示
         if not question:
-            return StreamingResponse(iter(["问题不能为空"]), media_type="text/plain")
+            def empty_gen():
+                yield "请输入你的问题~"
+            return StreamingResponse(empty_gen(), media_type="text/plain")
 
         # 1. 拿历史
         history = chat_memory.get(session_id, [])
 
         # 2. 检索
-        docs = retrieve_relevant_docs(question)
-        finally_docs = pseudo_rerank(question, docs, top_n=settings.rerank_top_k)
+        finally_docs = retrieve_relevant_docs(question)
         # 3. 拼接Prompt
-        prompt = build_prompt(question, docs, history)
+        prompt = build_prompt(question, finally_docs, history)
 
         # 4. 调用通义千问
         def gen():
@@ -45,7 +46,8 @@ async def ask_stream(request: Request):
                     model=settings.llm_model,
                     messages=[{"role": "user", "content": prompt}],
                     stream=True,
-                    api_key=settings.dashscope_api_key
+                    api_key=settings.dashscope_api_key,
+                    temperature = 0.1
                 )
                 for resp in responses:
                     if hasattr(resp, "output") and hasattr(resp.output, "text"):
@@ -58,25 +60,34 @@ async def ask_stream(request: Request):
                             time.sleep(0.01)
 
                 # 流式回答已经发完，开始拼接参考来源
-                # 1. 先过滤掉 None 和无效文档
-                valid_docs = [doc for doc in finally_docs if doc and isinstance(doc, dict)]
-                # 2. 提取所有来源（已去重）
-                source_list = list({doc["source"] for doc in valid_docs})
-                # 3. 拼接固定分隔符 + 所有来源
-                source_str = "###SOURCE###" + "###".join(source_list)
-                # 4. 把来源也通过流发给前端
-                yield source_str
+                try:
+                    if isinstance(finally_docs, list) and len(finally_docs) > 0:
+                        valid_sources = []
+                        for doc in finally_docs:
+                            if isinstance(doc, dict) and "source" in doc:
+                                valid_sources.append(doc["source"])
+                        # 去重
+                        valid_sources = list(set(valid_sources))
+                        if valid_sources:
+                            source_str = "###SOURCE###" + "###".join(valid_sources)    
+                            yield source_str
+                except Exception as se:
+                    logger.error(f"来源拼接失败：{se}")
+
             except Exception as e:
                 logger.error(f"模型调用失败：{str(e)}")
-                yield f"抱歉，模型调用出错了{str(e)}"
+                yield f"抱歉，模型调用出错了{str(e)[:50]}"
             finally:
                 # 5. 保存记忆
-                chat_memory[session_id] = history + [
-                    f"用户：{question}",
-                    f"助手：{full_answer if full_answer else '模型无响应'}"
-                ]
-
+                try:
+                    chat_memory[session_id] = history + [
+                        f"用户：{question}",
+                        f"助手：{full_answer if full_answer else '模型无响应'}"
+                    ]
+                except:
+                    pass
         return StreamingResponse(gen(), media_type="text/plain")
+    
     except Exception as e:
         logger.error(f"接口异常{str(e)}")
         return StreamingResponse(iter([f"接口出错：{str(e)}"]), media_type = "text/plain")
