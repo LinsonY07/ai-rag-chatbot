@@ -10,6 +10,7 @@ client = chromadb.PersistentClient(path=settings.chroma_db_path)
 # 获取集合（表）
 def get_chroma_collection():
     try:
+        print("🔥 服务读取的数据库路径：", settings.chroma_db_path)
         collection = client.get_collection(name="knowledge_base")
         logger.info("成功加载向量数据库集合")
         return collection

@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import os
 import chromadb
 from dashscope import TextEmbedding
+from utils.config import settings
 
 # 加载密钥
 load_dotenv()
@@ -38,7 +39,8 @@ def load_knowledge(file_path="knowledge.txt"):
 # 【修复 2】正确入库向量库
 # ==========================
 def save_to_chroma(chunks):
-    client = chromadb.PersistentClient("./chroma_db")
+    print("🔥 ingest 写入的路径：", settings.chroma_db_path)
+    client = chromadb.PersistentClient(path=settings.chroma_db_path)
 
     # 先删掉旧集合（保证维度正确）
     try:
@@ -63,7 +65,8 @@ def save_to_chroma(chunks):
             coll.add(
                 embeddings=[emb],
                 documents=[chunk],
-                ids=[f"doc_{idx}"]
+                ids=[f"doc_{idx}"],
+                metadatas=[{"source": "knowledge.txt"}]
             )
             print(f"✅ 已入库第 {idx+1} 块")
         except Exception as e:
