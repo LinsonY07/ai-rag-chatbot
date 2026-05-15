@@ -186,121 +186,127 @@
     </div>
 
     <script>
-        const chatBox = document.getElementById('chatBox');
-        const userInput = document.getElementById('userInput');
-        const sendBtn = document.getElementById('sendBtn');
-        const clearBtn = document.getElementById('clearBtn');
-        const themeBtn = document.getElementById('themeBtn');
+    const chatBox = document.getElementById('chatBox');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const themeBtn = document.getElementById('themeBtn');
 
-        let isDarkMode = false;
+    let isDarkMode = false;
 
-        // 主题切换
-        themeBtn.addEventListener('click', () => {
-            isDarkMode = !isDarkMode;
-            document.body.classList.toggle('dark-mode', isDarkMode);
-            themeBtn.textContent = isDarkMode ? '☀️ 浅色模式' : '🌙 深色模式';
-        });
+    // 主题切换
+    themeBtn.addEventListener('click', () => {
+        isDarkMode = !isDarkMode;
+        document.body.classList.toggle('dark-mode', isDarkMode);
+        themeBtn.textContent = isDarkMode ? '☀️ 浅色模式' : '🌙 深色模式';
+    });
 
-        // 清空对话
-        clearBtn.addEventListener('click', () => {
-            chatBox.innerHTML = '';
-        });
+    // ========================
+    // 【第四步核心修改】
+    // 清空对话 + 清空后端记忆
+    // ========================
+    clearBtn.addEventListener('click', async () => {
+        // 1. 清空前端页面
+        chatBox.innerHTML = '';
+        
+        // 2. 调用后端接口，真正清空记忆（这是新加的！）
+        try {
+            await fetch('/clear_history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            console.log("✅ 对话历史已清空");
+        } catch (e) {
+            console.log("清空接口请求失败", e);
+        }
+    });
 
-        // 发送消息
-        async function sendMessage() {
-            const question = userInput.value.trim();
-            if (!question) return;
+    // 发送消息
+    async function sendMessage() {
+        const question = userInput.value.trim();
+        if (!question) return;
 
-            // 1. 添加用户消息
-            addMessage(question, 'user');
-            userInput.value = '';
-            sendBtn.disabled = true;
+        addMessage(question, 'user');
+        userInput.value = '';
+        sendBtn.disabled = true;
 
-            // 2. 添加加载动画
-            const loadingDiv = addLoadingMessage();
+        const loadingDiv = addLoadingMessage();
 
-            try {
-                // 3. 发送请求，流式接收数据
-                const response = await fetch('/ask_stream', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ question: question, session_id: 'default' })
-                });
+        try {
+            const response = await fetch('/ask_stream', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question: question, session_id: 'default' })
+            });
 
-                // 4. 移除加载动画，创建助手消息
-                loadingDiv.remove();
-                const assistantDiv = addMessage('', 'assistant');
-                const assistantContent = assistantDiv.querySelector('.message-bubble');
+            loadingDiv.remove();
+            const assistantDiv = addMessage('', 'assistant');
+            const assistantContent = assistantDiv.querySelector('.message-bubble');
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let fullText = '';
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let fullText = '';
 
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-                    const chunk = decoder.decode(value);
-                    fullText += chunk;
-                    assistantContent.textContent = fullText;
-                    chatBox.scrollTop = chatBox.scrollHeight;
-                }
-
-                // ======================
-                // 👇 在这里加来源解析逻辑
-                // ======================
-                let parts = fullText.split("###SOURCE###");
-                let answer = parts[0] || "";
-                let sources = parts.slice(1) || [];
-
-                // 重新设置回答
-                assistantContent.textContent = answer;
-
-                // 如果有来源，追加显示灰色小字
-                if (sources.length > 0 && sources[0].trim() !== "") {
-                    let sourceHtml = `<div style="font-size:12px;color:#888;margin-top:8px;border-top:1px solid #eee;padding-top:6px;">`;
-                    sourceHtml += `<strong>参考来源：</strong><br>`;
-                    sources.forEach(s => {
-                        if(s.trim()) sourceHtml += `• ${s}<br>`;
-                    });
-                    sourceHtml += `</div>`;
-                    assistantContent.innerHTML += sourceHtml;
-                }
-            } catch (error) {
-                loadingDiv.remove();
-                addMessage(`请求出错：${error.message}`, 'assistant');
-            } finally {
-                sendBtn.disabled = false;
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value);
+                fullText += chunk;
+                assistantContent.textContent = fullText;
+                chatBox.scrollTop = chatBox.scrollHeight;
             }
-        }
 
-        function addMessage(text, role) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${role}`;
-            messageDiv.innerHTML = `<div class="message-bubble">${text}</div>`;
-            chatBox.appendChild(messageDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
-            return messageDiv;
-        }
+            let parts = fullText.split("###SOURCE###");
+            let answer = parts[0] || "";
+            let sources = parts.slice(1) || [];
 
-        function addLoadingMessage() {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = 'message assistant loading';
-            messageDiv.innerHTML = `
-                <div class="message-bubble">
-                    <div class="loading-dot"></div>
-                    <div class="loading-dot"></div>
-                    <div class="loading-dot"></div>
-                </div>
-            `;
-            chatBox.appendChild(messageDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
-            return messageDiv;
-        }
+            assistantContent.textContent = answer;
 
-        sendBtn.addEventListener('click', sendMessage);
-        userInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') sendMessage();
-        });
+            if (sources.length > 0 && sources[0].trim() !== "") {
+                let sourceHtml = `<div style="font-size:12px;color:#888;margin-top:8px;border-top:1px solid #eee;padding-top:6px;">`;
+                sourceHtml += `<strong>参考来源：</strong><br>`;
+                sources.forEach(s => {
+                    if(s.trim()) sourceHtml += `• ${s}<br>`;
+                });
+                sourceHtml += `</div>`;
+                assistantContent.innerHTML += sourceHtml;
+            }
+        } catch (error) {
+            loadingDiv.remove();
+            addMessage(`请求出错：${error.message}`, 'assistant');
+        } finally {
+            sendBtn.disabled = false;
+        }
+    }
+
+    function addMessage(text, role) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${role}`;
+        messageDiv.innerHTML = `<div class="message-bubble">${text}</div>`;
+        chatBox.appendChild(messageDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+        return messageDiv;
+    }
+
+    function addLoadingMessage() {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = 'message assistant loading';
+        messageDiv.innerHTML = `
+            <div class="message-bubble">
+                <div class="loading-dot"></div>
+                <div class="loading-dot"></div>
+                <div class="loading-dot"></div>
+            </div>
+        `;
+        chatBox.appendChild(messageDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+        return messageDiv;
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    userInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+    });
     </script>
 </body>
 </html>

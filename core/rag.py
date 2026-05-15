@@ -105,8 +105,20 @@ def build_prompt(query: str, docs: list, history: list):
                 context += f"来源：{doc['source']}\n"
                 context += f"内容：{doc['content']}\n\n"
 
-    # 拼接历史对话（简单容错）
-    chat_history = "\n".join(history[-6:])  #只保留最近6轮，避免过长
+    #记忆模块：把历史对话格式化为：用户/助手 的连续对话
+    chat_history = ""
+    for msg in history[-6:]:    #最多保留最近6轮
+        role = msg.get("role")
+        content = msg.get("content")
+        if role == "user":
+            chat_history += f"用户：{content}\n"
+        elif role == "assistant":
+            chat_history += f"助手：{content}\n"
+
+    # 如果没有历史，显示为空
+    if not chat_history:
+        chat_history = "无"
+
 
     prompt = f"""
 你是一个智能助手，请根据知识库内容回答用户问题，不要编造信息。
@@ -117,7 +129,6 @@ def build_prompt(query: str, docs: list, history: list):
 ### 历史对话：
 {chat_history}
 
-### 用户问题：
 {query}
 
 请回答：
