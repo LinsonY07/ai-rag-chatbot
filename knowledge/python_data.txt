@@ -1,0 +1,31 @@
+Python 在数据处理和数据分析领域应用广泛，以下是入门核心内容。
+
+1. 列表推导式
+快速生成列表的简洁写法：
+squares = [x**2 for x in range(10)]
+
+2. 字符串处理
+常用字符串方法：split()、join()、strip()、replace()。
+例如，分割 CSV 格式字符串：
+line = "name,age,gender"
+parts = line.split(",")
+
+3. 文件读写
+Python 内置函数 open() 可直接操作文件：
+with open("data.txt", "w", encoding="utf-8") as f:
+    f.write("测试数据")
+
+4. 简单数据处理示例
+使用列表和字典存储数据：
+students = [
+    {"name": "小明", "score": 90},
+    {"name": "小红", "score": 85}
+]
+for s in students:
+    print(f"{s['name']} 成绩：{s['score']}")
+
+5. 第三方库入门
+pandas 是最常用的数据处理库，可快速处理表格数据：
+import pandas as pd
+df = pd.read_csv("data.csv")
+print(df.head())

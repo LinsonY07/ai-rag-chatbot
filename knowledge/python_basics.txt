@@ -1,0 +1,36 @@
+Python 是一门简洁、易读的编程语言，非常适合初学者入门。
+
+1. 变量与数据类型
+Python 中的变量不需要声明类型，直接赋值即可。常见的数据类型包括整数（int）、浮点数（float）、字符串（str）和布尔值（bool）。
+例如：
+age = 18
+name = "小明"
+is_student = True
+
+2. 条件语句
+使用 if/elif/else 实现条件判断：
+if age >= 18:
+    print("成年")
+else:
+    print("未成年")
+
+3. 循环语句
+for 循环常用于遍历序列：
+for i in range(5):
+    print(i)
+while 循环用于满足条件时重复执行：
+count = 0
+while count < 5:
+    print(count)
+    count += 1
+
+4. 函数定义
+使用 def 关键字定义函数：
+def greet(name):
+    print(f"你好，{name}！")
+greet("小明")
+
+5. 列表与字典
+列表是有序可变序列，字典是键值对集合：
+my_list = [1, 2, 3]
+my_dict = {"name": "小明", "age": 18}

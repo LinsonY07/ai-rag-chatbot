@@ -10,7 +10,7 @@ from utils.config import settings
 from core.conversation import ConversationMemory  
 
 
-memory = ConversationMemory(max_turns=5)  
+memory = ConversationMemory(max_turns=settings.max_chat_history_round)  
 
 router = APIRouter()
 
@@ -55,6 +55,12 @@ async def ask_stream(request: Request):
 
         # 3. 检索
         finally_docs = retrieve_relevant_docs(rewritten_question)
+
+        # 直接在这里拦截！空就直接返回，不发给大模型！
+        if not finally_docs:
+            return {"reply": "暂无相关信息，无法回答"}
+
+
         # 4. 拼接Prompt
         prompt = build_prompt(question, finally_docs, history)
 

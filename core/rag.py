@@ -78,8 +78,15 @@ def retrieve_relevant_docs(query: str):
             docs,
             top_n=settings.rerank_top_k
         )
+
         logger.info(f"重排后的最终文档数：{len(finally_docs)}")
+        
+        #如果没有找到任何相关文档，直接返回空，不让 AI 乱回答
+        if len(finally_docs) == 0:
+            logger.warning("⚠️ 未找到任何相关知识，不回答")
+            return []
         return finally_docs
+    
     except Exception as e:
         logger.error(f"向量检索异常：{e}")
         # 接口失败兜底返回空
@@ -96,18 +103,25 @@ def build_prompt(query: str, docs: list, history: list):
     
     # 拼接参考上下文
     if not docs:
-        context = "暂无参考资料"
-    else:
-        context = ""
-        for doc in docs:
-            # 防御：必须是字典且包含字段
-            if isinstance(doc, dict) and "source" in doc and "content" in doc:
-                context += f"来源：{doc['source']}\n"
-                context += f"内容：{doc['content']}\n\n"
+        return f"""
+你是一个智能助手，只能根据提供的参考内容回答问题。
+**如果没有参考内容，直接回答："暂无相关信息，无法回答"，严禁编造任何内容！**
+
+用户问题：{query}
+请回答：
+"""
+    
+    
+    context = ""
+    for doc in docs:
+           # 防御：必须是字典且包含字段
+        if isinstance(doc, dict) and "source" in doc and "content" in doc:
+            context += f"来源：{doc['source']}\n"
+            context += f"内容：{doc['content']}\n\n"
 
     #记忆模块：把历史对话格式化为：用户/助手 的连续对话
     chat_history = ""
-    for msg in history[-6:]:    #最多保留最近6轮
+    for msg in history[-settings.max_chat_history_round:]:    #最多保留最近6轮
         role = msg.get("role")
         content = msg.get("content")
         if role == "user":

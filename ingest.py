@@ -11,7 +11,7 @@ from utils.file_loader import load_all_knowledge_files
 # ==========================
 # 【修复 1】文本分块函数（正确循环）
 # ==========================
-def split_text(text, chunk_size=300, overlap=50):
+def split_text(text, chunk_size, overlap):
     chunks = []
     start = 0
     total_len = len(text)
@@ -57,7 +57,11 @@ def save_to_chroma():
         print(f"\n📄 正在处理文件：{file_name}")
 
         # 对当前文件进行分块
-        chunks = split_text(file_content)
+        chunks = split_text(
+            file_content,
+            chunk_size=settings.chunk_size,  # 从配置来
+            overlap=settings.chunk_overlap   # 从配置来
+        )
 
         # 分块入库
         for chunk in chunks:
@@ -84,7 +88,7 @@ def save_to_chroma():
             except Exception as e:
                 print(f"❌ 片段入库失败: {e}")
             
-        print(f"\n🎉 所有文件入库完成！总片段数：{global_idx}")
+    print(f"\n🎉 所有文件入库完成！总片段数：{global_idx}")
 
 # ==========================
 # 运行入口
