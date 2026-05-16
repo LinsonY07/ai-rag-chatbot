@@ -56,3 +56,6 @@ chroma/
 # 临时文件
 *.tmp
 *.temp
+
+# 历史文件
+old/
