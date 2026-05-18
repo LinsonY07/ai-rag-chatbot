@@ -10,7 +10,6 @@ from utils.config import settings
 from core.conversation import ConversationMemory  
 
 
-memory = ConversationMemory(max_turns=settings.max_chat_history_round)  
 
 router = APIRouter()
 
@@ -24,41 +23,50 @@ def rewrite_question(question, history):
             if msg["role"] == "user" and msg["content"] != question:
                 last_user_question = msg["content"]
                 break
-            if last_user_question:
-                # 将模糊问题改写为明确问题
-                rewrite = f"基于上一轮问题；'{last_user_question}',回答当前问题{question}"
+        if last_user_question:
+            # 将模糊问题改写为明确问题
+            rewrite = f"基于上一轮问题；'{last_user_question}',回答当前问题{question}"
     return rewrite
 
-# 流式接口
+# 流式接口（支持多会话隔离）
 @router.post("/ask_stream")
 async def ask_stream(request: Request):
     try:
         data = await request.json()
         question = data.get("question", "").strip()
-        # session_id = data.get("session_id", "default")
+        
+        # 获取前端传来的会话ID
+        session_id = data.get("session_id", "default")
 
-        logger.info(f"用户提问: {question}")
+        logger.info(f"会话：{session_id}用户提问: {question}")
         # 防御：空问题直接返回友好提示
         if not question:
             def empty_gen():
                 yield "请输入你的问题~"
             return StreamingResponse(empty_gen(), media_type="text/plain")
 
-        # 1. 把当前问题加入记忆
-        memory.add_message("user", question)
+        # 每个会话都创建独立记忆！
+        memory = ConversationMemory(session_id=session_id, max_turns=settings.max_chat_history_round)  
+
         
-        # 2.从记忆类获取历史
+        
+        # 1. 先拿【过去】的历史
         history = memory.get_history()
 
-        # 调用修改对话函数
+        # 2. 用历史改写问题
         rewritten_question = rewrite_question(question, history)
+
+        # 3. 最后把当前问题加入记忆
+        memory.add_message("user", question)
 
         # 3. 检索
         finally_docs = retrieve_relevant_docs(rewritten_question)
 
         # 直接在这里拦截！空就直接返回，不发给大模型！
         if not finally_docs:
-            return {"reply": "暂无相关信息，无法回答"}
+            def empty_gen():
+                yield "暂无相关信息，无法回答"
+            return StreamingResponse(empty_gen(), media_type="text/plain")
 
 
         # 4. 拼接Prompt
@@ -75,7 +83,7 @@ async def ask_stream(request: Request):
                     messages=[{"role": "user", "content": prompt}],
                     stream=True,
                     api_key=settings.dashscope_api_key,
-                    temperature = 0.1
+                    temperature = 0.0
                 )
                 for resp in responses:
                     if hasattr(resp, "output") and hasattr(resp.output, "text"):
@@ -89,18 +97,18 @@ async def ask_stream(request: Request):
 
                 # 流式回答已经发完，开始拼接参考来源
                 try:
-                    if isinstance(finally_docs, list) and len(finally_docs) > 0:
-                        valid_sources = []
+                    if finally_docs:
+                        sources = []
                         for doc in finally_docs:
-                            if isinstance(doc, dict) and "source" in doc:
-                                valid_sources.append(doc["source"])
-                        # 去重
-                        valid_sources = list(set(valid_sources))
-                        if valid_sources:
-                            source_str = "###SOURCE###" + "###".join(valid_sources)    
-                            yield source_str
+                            if isinstance(doc,dict) and "source" in doc:
+                                sources.append(doc["source"])
+                        sources = list(set(sources))
+                        if sources:
+                            yield "\n\n"+"📚 参考来源：" + " | ".join(sources)
+
                 except Exception as se:
-                    logger.error(f"来源拼接失败：{se}")
+                    logger.error(f"来源输出错误：{se}")
+                    pass
 
             except Exception as e:
                 logger.error(f"模型调用失败：{str(e)}")
@@ -120,8 +128,13 @@ async def ask_stream(request: Request):
         return StreamingResponse(iter([f"接口出错：{str(e)}"]), media_type = "text/plain")
 
 
-# 清空记忆接口
+# 清空记忆接口(只清空当前会话)
 @router.post("/clear_history")
-async def clear_history():
+async def clear_history(request: Request):
+    data = await request.json()
+    session_id = data.get("session_id", "default")
+    
+    # 只清空当前会话
+    memory = ConversationMemory(session_id=session_id)
     memory.clear()
     return {"status": "success", "msg": "对话已清空"}# ========================

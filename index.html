@@ -12,6 +12,8 @@
             --assistant-bubble: #ffffff;
             --border-color: #e5e5e5;
             --input-bg: #ffffff;
+            --source-color: #666;
+            --source-bg: #f5f7fa;
         }
 
         .dark-mode {
@@ -21,6 +23,8 @@
             --assistant-bubble: #40414f;
             --border-color: #4a4a5a;
             --input-bg: #40414f;
+            --source-color: #b0b8c4;
+            --source-bg: #2a2b32;
         }
 
         * {
@@ -104,6 +108,17 @@
         .assistant .message-bubble {
             background-color: var(--assistant-bubble);
             border: 1px solid var(--border-color);
+        }
+
+        .source-block {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px dashed var(--border-color);
+            font-size: 12px;
+            color: var(--source-color);
+            background: var(--source-bg);
+            padding: 6px 10px;
+            border-radius: 8px;
         }
 
         .loading .message-bubble {
@@ -194,34 +209,40 @@
 
     let isDarkMode = false;
 
-    // 主题切换
+    function generateUUID() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0,
+                v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    let sessionId = localStorage.getItem('rag_session_id');
+    if (!sessionId) {
+        sessionId = generateUUID();
+        localStorage.setItem('rag_session_id', sessionId);
+    }
+
     themeBtn.addEventListener('click', () => {
         isDarkMode = !isDarkMode;
         document.body.classList.toggle('dark-mode', isDarkMode);
         themeBtn.textContent = isDarkMode ? '☀️ 浅色模式' : '🌙 深色模式';
     });
 
-    // ========================
-    // 【第四步核心修改】
-    // 清空对话 + 清空后端记忆
-    // ========================
     clearBtn.addEventListener('click', async () => {
-        // 1. 清空前端页面
         chatBox.innerHTML = '';
-        
-        // 2. 调用后端接口，真正清空记忆（这是新加的！）
         try {
             await fetch('/clear_history', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_id: sessionId })
             });
             console.log("✅ 对话历史已清空");
         } catch (e) {
-            console.log("清空接口请求失败", e);
+            console.log("清空失败", e);
         }
     });
 
-    // 发送消息
     async function sendMessage() {
         const question = userInput.value.trim();
         if (!question) return;
@@ -236,41 +257,51 @@
             const response = await fetch('/ask_stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ question: question, session_id: 'default' })
+                body: JSON.stringify({
+                    question: question,
+                    session_id: sessionId
+                })
             });
 
             loadingDiv.remove();
             const assistantDiv = addMessage('', 'assistant');
             const assistantContent = assistantDiv.querySelector('.message-bubble');
-
-            const reader = response.body.getReader();
             const decoder = new TextDecoder();
+            const reader = response.body.getReader();
             let fullText = '';
 
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-                const chunk = decoder.decode(value);
-                fullText += chunk;
+                fullText += decoder.decode(value);
                 assistantContent.textContent = fullText;
                 chatBox.scrollTop = chatBox.scrollHeight;
             }
 
+            // 处理回答和来源
             let parts = fullText.split("###SOURCE###");
             let answer = parts[0] || "";
             let sources = parts.slice(1) || [];
 
             assistantContent.textContent = answer;
 
+            // 无答案场景：不显示来源
+            if (answer.includes("暂无相关信息，无法回答")) {
+                return;
+            }
+
+            // 有答案场景：正常显示来源
             if (sources.length > 0 && sources[0].trim() !== "") {
-                let sourceHtml = `<div style="font-size:12px;color:#888;margin-top:8px;border-top:1px solid #eee;padding-top:6px;">`;
-                sourceHtml += `<strong>参考来源：</strong><br>`;
+                let sourceHtml = `<div class="source-block"><strong>📚 参考来源：</strong><br>`;
                 sources.forEach(s => {
-                    if(s.trim()) sourceHtml += `• ${s}<br>`;
+                    if (s.trim()) {
+                        sourceHtml += `• ${s.trim()}<br>`;
+                    }
                 });
                 sourceHtml += `</div>`;
                 assistantContent.innerHTML += sourceHtml;
             }
+
         } catch (error) {
             loadingDiv.remove();
             addMessage(`请求出错：${error.message}`, 'assistant');
@@ -304,7 +335,7 @@
     }
 
     sendBtn.addEventListener('click', sendMessage);
-    userInput.addEventListener('keypress', (e) => {
+    userInput.addEventListener('keypress', function (e) {
         if (e.key === 'Enter') sendMessage();
     });
     </script>

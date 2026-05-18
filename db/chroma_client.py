@@ -5,6 +5,7 @@ from utils.logger import logger
 
 # 全局唯一的 Chroma 客户端
 # 项目运行期间， 只创建一次
+# 内存模式，重启服务就清空向量库，速度飞快
 client = chromadb.PersistentClient(path=settings.chroma_db_path)
 
 # 获取集合（表）

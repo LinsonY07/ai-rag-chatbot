@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     chunk_size: int = 500
     chunk_overlap: int = 50
     # 检索与重排配置
-    recall_top_k: int = 5  
+    recall_top_k: int = 3  
     rerank_top_k: int = 2
     # 知识库路径配置
     knowledge_dir: str = "./knowledge"
