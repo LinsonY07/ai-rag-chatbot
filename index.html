@@ -71,6 +71,61 @@
             background-color: var(--border-color);
         }
 
+        .page-body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .file-manager {
+            width: 260px;
+            border-right: 1px solid var(--border-color);
+            padding: 16px;
+            overflow-y: auto;
+            background: var(--bg-color);
+        }
+
+        .file-manager h3 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 10px;
+            background: var(--assistant-bubble);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+
+        .delete-btn {
+            background: #dc3545;
+            color: #fff;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        .clear-all-btn {
+            width: 100%;
+            margin-top: 12px;
+            padding: 8px;
+            background: #fd7e14;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
         .chat-container {
             flex: 1;
             overflow-y: auto;
@@ -148,6 +203,7 @@
             padding: 16px 20px;
             border-top: 1px solid var(--border-color);
             background-color: var(--bg-color);
+            align-items: center;
         }
 
         .input-area input {
@@ -182,6 +238,30 @@
             opacity: 0.6;
             cursor: not-allowed;
         }
+
+        /* 上传进度条样式 */
+        .progress-container {
+            display: none;
+            width: 100%;
+            margin-top: 8px;
+        }
+        .progress-bar-bg {
+            background: #eee;
+            border-radius: 4px;
+            overflow: hidden;
+            height: 8px;
+        }
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background: #28a745;
+            transition: width 0.2s ease;
+        }
+        .progress-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -193,10 +273,30 @@
         </div>
     </div>
 
-    <div class="chat-container" id="chatBox"></div>
+    <div class="page-body">
+        <div class="file-manager">
+            <h3>📂 已上传文件</h3>
+            <div id="fileList"></div>
+            <button class="clear-all-btn" id="clearAllBtn">清空所有文件</button>
+        </div>
+
+        <div class="chat-container" id="chatBox"></div>
+    </div>
 
     <div class="input-area">
         <input type="text" id="userInput" placeholder="请输入你的问题...">
+        
+        <input type="file" id="fileInput" style="display: none;" accept=".txt,.md,.pdf,.docx,.xlsx">
+        <button id="uploadBtn" style="background-color: #28a745;">上传文档</button>
+
+        <!-- 进度条 -->
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar-bg">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <div class="progress-text" id="progressText">0%</div>
+        </div>
+
         <button id="sendBtn">发送</button>
     </div>
 
@@ -206,6 +306,11 @@
     const sendBtn = document.getElementById('sendBtn');
     const clearBtn = document.getElementById('clearBtn');
     const themeBtn = document.getElementById('themeBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const fileInput = document.getElementById('fileInput');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
 
     let isDarkMode = false;
 
@@ -243,6 +348,98 @@
         }
     });
 
+    uploadBtn.addEventListener('click', () => {
+        fileInput.click();
+    });
+
+    // 带进度条的上传
+    fileInput.addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = "上传中...";
+        progressContainer.style.display = "block";
+        progressBar.style.width = "0%";
+        progressText.textContent = "0%";
+
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "/upload_doc");
+
+        xhr.upload.onprogress = function(e) {
+            if (e.lengthComputable) {
+                const percent = Math.round((e.loaded / e.total) * 100);
+                progressBar.style.width = percent + "%";
+                progressText.textContent = percent + "%";
+            }
+        };
+
+        xhr.onload = function() {
+            if (xhr.status === 200) {
+                const result = JSON.parse(xhr.responseText);
+                alert(result.message);
+                loadFileList();
+            } else {
+                alert("上传失败");
+            }
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = "上传文档";
+            progressContainer.style.display = "none";
+            fileInput.value = "";
+        };
+
+        xhr.onerror = function() {
+            alert("上传失败：网络错误");
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = "上传文档";
+            progressContainer.style.display = "none";
+            fileInput.value = "";
+        };
+
+        xhr.send(formData);
+    });
+
+    async function loadFileList() {
+        const res = await fetch("/api/files");
+        const data = await res.json();
+        const listEl = document.getElementById("fileList");
+        listEl.innerHTML = "";
+
+        data.files.forEach(filename => {
+            const item = document.createElement("div");
+            item.className = "file-item";
+            item.innerHTML = `
+                <span>${filename}</span>
+                <button class="delete-btn" onclick="deleteFile('${filename}')">删除</button>
+            `;
+            listEl.appendChild(item);
+        });
+    }
+
+    async function deleteFile(filename) {
+        if (!confirm(`确定删除 ${filename}？`)) return;
+        await fetch(`/api/files/${filename}`, { method: "DELETE" });
+        alert("已删除");
+        loadFileList();
+    }
+
+    document.getElementById("clearAllBtn").addEventListener("click", async () => {
+        if (!confirm("确定清空所有文件？不可恢复！")) return;
+        await fetch("/api/files", { method: "DELETE" });
+        alert("已清空所有文件");
+        loadFileList();
+    });
+
+    window.onload = async function() {
+        loadFileList();
+        const res = await fetch("/api/history?session_id="+sessionId);
+        const data = await res.json();
+        data.history.forEach(h => addMessage(h.content, h.role));
+    };
+
     async function sendMessage() {
         const question = userInput.value.trim();
         if (!question) return;
@@ -278,19 +475,16 @@
                 chatBox.scrollTop = chatBox.scrollHeight;
             }
 
-            // 处理回答和来源
             let parts = fullText.split("###SOURCE###");
             let answer = parts[0] || "";
             let sources = parts.slice(1) || [];
 
             assistantContent.textContent = answer;
 
-            // 无答案场景：不显示来源
             if (answer.includes("暂无相关信息，无法回答")) {
                 return;
             }
 
-            // 有答案场景：正常显示来源
             if (sources.length > 0 && sources[0].trim() !== "") {
                 let sourceHtml = `<div class="source-block"><strong>📚 参考来源：</strong><br>`;
                 sources.forEach(s => {
@@ -310,10 +504,20 @@
         }
     }
 
+    // 带时间戳的消息
     function addMessage(text, role) {
         const messageDiv = document.createElement('div');
         messageDiv.className = `message ${role}`;
-        messageDiv.innerHTML = `<div class="message-bubble">${text}</div>`;
+        
+        const now = new Date();
+        const time = `${now.getHours().toString().padStart(2,0)}:${now.getMinutes().toString().padStart(2,0)}`;
+        
+        messageDiv.innerHTML = `
+            <div class="message-bubble">${text}</div>
+            <div style="font-size:11px;color:#999;margin-top:4px;text-align:${role==='user'?'right':'left'}">
+                ${time}
+            </div>
+        `;
         chatBox.appendChild(messageDiv);
         chatBox.scrollTop = chatBox.scrollHeight;
         return messageDiv;

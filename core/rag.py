@@ -4,8 +4,134 @@ from utils.logger import logger
 from db.chroma_client import get_chroma_collection
 from dashscope import TextEmbedding
 import requests     #调用阿里Rerank
+from ingest import split_text, save_to_chroma
+import os
+import pdfplumber
+from docx import Document
+from openpyxl import load_workbook
 
-# 真实 Rerank 重排
+
+# ==================== 单文件上传专用：入库函数 ==================== 
+def add_chunks_to_chroma(vector_db, chunks, source_name):
+    """将文本分块存入向量库（用于网页上传功能）"""
+    try:
+        # 获取当前库中的总数量，用于生成唯一ID
+        current_data = vector_db.get()
+        global_idx = len(current_data['ids'])
+        
+        ids = []
+        embeddings = []
+        metadatas = []
+        
+        for chunk in chunks:
+            # 调用 embedding 接口生成向量
+            resp = TextEmbedding.call(
+                api_key= settings.dashscope_api_key,
+                model=settings.embedding_model,
+                input=chunk
+            )
+            emb = resp.output["embeddings"][0]["embedding"]
+            
+            # 组装数据
+            ids.append(f"doc_{global_idx}")
+            embeddings.append(emb)
+            metadatas.append({"source": source_name})
+            global_idx += 1
+            
+          # 存入数据库
+        vector_db.add(
+            ids=ids,                # 每条数据的唯一编号
+            embeddings=embeddings,  # 每条数据的向量
+            documents=chunks,       # 原文（chunks 就是）
+            metadatas=metadatas     # 每条数据的附加信息（来源）
+        )
+        logger.info(f"✅ 成功存入 {len(chunks)} 个文本块")
+        
+    except Exception as e:
+        logger.error(f"❌ 入库失败：{str(e)}")
+        raise e  
+
+"""解析TXT文件，文件直接读取"""
+def extract_txt_markdown_text(file_path:str) -> str:
+    text = ""
+    with open(file_path, "r", encoding="utf-8") as f:
+        text = f.read()
+    return text
+
+"""解析PDF文件，提取纯文本"""
+def extract_pdf_text(file_path: str) -> str:
+    text = ""
+    with pdfplumber.open(file_path) as pdf:
+        for page in pdf.pages:
+            page_text = page.extract_text()
+            if page_text:   #跳过空白页
+                text += page_text + "\n" # 不同页之间加换行，防止粘连在一起
+    return text
+
+"""解析docx Word文档，提取全部文本"""
+def extract_docx_text(file_path: str) -> str:
+    doc = Document(file_path)
+    full_text = []
+    for para in doc.paragraphs:
+        if para.text.strip():
+            full_text.append(para.text.strip())
+    return "\n".join(full_text)
+    
+"""解析xlsx Excel表格，提取所有单元格文本"""
+def extract_xlsx_text(file_path: str) -> str:
+    full_text = []
+    wb = None
+    try:
+        # 去掉with，直接加载工作簿
+        wb = load_workbook(filename=file_path, read_only=True, data_only=True)
+        for sheet in wb.worksheets:
+            for row in sheet.iter_rows(values_only=True):
+                row_data = [str(cell).strip() for cell in row if cell is not None]  #遍历一行里每个单元格
+                if row_data:
+                    full_text.append(" | ".join(row_data))  #同一行的单元格用 | 分隔，方便 RAG 看懂表格结构。
+    finally:
+        # 无论是否出错，都确保关闭文件
+        if wb:
+            wb.close()
+    return "\n".join(full_text)
+
+# ==================== 【新增】处理单个上传文件 ====================
+def process_single_file(file_path: str, vector_db):
+    """处理单个文档：读取(支持 TXT/PDF) -> 分块 -> 入库"""
+    try:
+        # 1. ========== 1. 读取文本 ==========
+        file_ext = os.path.splitext(file_path)[1].lower()   #获取文件后缀
+        if file_ext in [".txt", ".md"]:
+            content = extract_txt_markdown_text(file_path)
+            
+        elif file_ext == ".pdf":
+            content = extract_pdf_text(file_path)
+            
+        elif file_ext == ".docx":
+            content = extract_docx_text(file_path)
+            
+        elif file_ext == ".xlsx":
+            content = extract_xlsx_text(file_path)
+                        
+        else:
+            raise ValueError(f"不支持的文件类型: {file_ext}\n目前支持：.txt .md .pdf .docx .xlsx")
+            
+        # 2.========== 2.文本分块 ========== 
+        chunks = split_text(
+            content,
+            chunk_size=settings.chunk_size,
+            overlap=settings.chunk_overlap
+        )
+            
+        # ========== 3.存入向量库 ========== 
+        add_chunks_to_chroma(vector_db, chunks, os.path.basename(file_path))
+        logger.info(f"✅ 单个文件处理完成：{file_path}")
+        
+    except Exception as e:
+        logger.error(f"处理文件失败 {file_path}: {e}")
+        raise e
+
+# ====================真实 Rerank 重排 ====================
 def real_rerank(query: str, docs: list, top_n: int = 2) -> list:  
     """
     阿里DashScope 真实重排接口
@@ -89,7 +215,7 @@ def real_rerank(query: str, docs: list, top_n: int = 2) -> list:
         return pseudo_rerank(query, docs, top_n)
        
 
-# 伪重排函数
+# ==================== 伪重排函数 ====================
 def pseudo_rerank(query: str, docs: list, top_n : int = 2) -> list:
     """
     功能：关键词打分 + 文档去重 + 相关性排序
@@ -146,7 +272,7 @@ def pseudo_rerank(query: str, docs: list, top_n : int = 2) -> list:
         logger.error(f"伪重排异常：{e}")
         return []
     
-# 向量检索 + 重排
+# ==================== 向量检索 + 重排 ====================
 def retrieve_relevant_docs(query: str):
     """向量召回 -> 进入重排流程"""
     if not query.strip():
@@ -203,7 +329,7 @@ def retrieve_relevant_docs(query: str):
         return []
 
 
-# 拼接Prompt
+# ==================== 拼接Prompt ====================
 def build_prompt(query: str, docs: list, history: list):
     """
     防幻觉核心逻辑：
