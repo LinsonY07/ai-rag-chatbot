@@ -1,13 +1,16 @@
 # 存放路由接口（只负责接收前端请求，不写业务逻辑）
+# 第一步改动：先替换导入区，将旧的rag模块换为新的 LangChain 模块
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from utils.logger import logger
-from core.rag import retrieve_relevant_docs, build_prompt, pseudo_rerank
-from dashscope import Generation
 import json
 import time
 from utils.config import settings
-from core.conversation import ConversationMemory  
+# from core.rag import retrieve_relevant_docs, build_prompt, pseudo_rerank  #旧的检索模块
+# from dashscope import Generation  
+# from core.conversation import ConversationMemory  #旧的记忆模块
+from core.rag_langchain import create_full_rag_chain, retrieve_documents
+from utils.langchain_memory import get_conversation_memory
 
 
 
@@ -28,113 +31,100 @@ def rewrite_question(question, history):
             rewrite = f"基于上一轮问题；'{last_user_question}',回答当前问题{question}"
     return rewrite
 
-# 流式接口（支持多会话隔离）
+# 第二步改动：重写 ask_stream
+# LangChain 版本
 @router.post("/ask_stream")
 async def ask_stream(request: Request):
     try:
+        # 1.接收前端 JSON
         data = await request.json()
-        question = data.get("question", "").strip()
-        
-        # 获取前端传来的会话ID
+        question = data.get("question","").strip()
         session_id = data.get("session_id", "default")
-
-        logger.info(f"会话：{session_id}用户提问: {question}")
-        # 防御：空问题直接返回友好提示
+        
+        # 2.日志记录
+        logger.info(f"会话：{session_id}，用户提问：{question}")
+        
+        # 3.空问题判断
         if not question:
-            def empty_gen():
-                yield "请输入你的问题~"
-            return StreamingResponse(empty_gen(), media_type="text/plain")
-
-        # 每个会话都创建独立记忆！
-        memory = ConversationMemory(session_id=session_id, max_turns=settings.max_chat_history_round)  
-
+            return StreamingResponse(iter(["请输入你的问题~"]), media_type= "text/plain") 
         
+        # 一、加载对话记忆
+        # 1.根据 session_id 获取记忆
+        memory = get_conversation_memory(session_id)
         
-        # 1. 先拿【过去】的历史
-        history = memory.get_history()
-
-        # 2. 用历史改写问题
-        rewritten_question = rewrite_question(question, history)
-
-        # 3. 最后把当前问题加入记忆
-        memory.add_message("user", question)
-
-        # 3. 检索
-        finally_docs = retrieve_relevant_docs(rewritten_question)
-
-        # 直接在这里拦截！空就直接返回，不发给大模型！
-        if not finally_docs:
-            def empty_gen():
-                yield "暂无相关信息，无法回答"
-            return StreamingResponse(empty_gen(), media_type="text/plain")
-
-
-        # 4. 拼接Prompt
-        prompt = build_prompt(question, finally_docs, history)
-
-        # 5. 调用通义千问
-        def gen():
-            # 实现流式增量输出
-            full_answer = ""
-            last_len = 0   # 记录上一次的长度，用来取增量
+        # 2.加载记忆变量（LangChain 格式）
+        memory_vars = memory.load_memory_variables({})
+        chat_history = memory_vars.get("chat_history", [])
+        
+        # 3.获取原始历史（给问题改写用）
+        raw_history = memory.sqlite_memory.get_history()
+        
+        # 二、问题改写
+        # 将上下文依赖的问题 ——> 变成无依赖的检索问题
+        rewritten_question = rewrite_question(question, raw_history)
+        
+        # 三、流式生成函数
+        def generate():
+            full_answer = ""    #保存完整回答，最后存记忆
             try:
-                responses = Generation.call(
-                    model=settings.llm_model,
-                    messages=[{"role": "user", "content": prompt}],
-                    stream=True,
-                    api_key=settings.dashscope_api_key,
-                    temperature = 0.0
+                # 1.创建 RAG 链
+                chain = create_full_rag_chain(
+                    use_rerank = True,
+                    top_k = settings.recall_top_k
                 )
-                for resp in responses:
-                    if hasattr(resp, "output") and hasattr(resp.output, "text"):
-                        current_text = resp.output.text
-                        if current_text:
-                            token = current_text[last_len:]
-                            full_answer += token
-                            yield token
-                            last_len = len(current_text)
-                            time.sleep(0.01)
-
-                # 流式回答已经发完，开始拼接参考来源
-                try:
-                    if finally_docs:
-                        sources = []
-                        for doc in finally_docs:
-                            if isinstance(doc,dict) and "source" in doc:
-                                sources.append(doc["source"])
-                        sources = list(set(sources))
-                        if sources:
-                            yield "\n\n"+"📚 参考来源：" + " | ".join(sources)
-
-                except Exception as se:
-                    logger.error(f"来源输出错误：{se}")
-                    pass
-
+                
+                # 2.构造输入（必须包含：question + chat_history）
+                input_data = {
+                    "question": rewritten_question,
+                    "chat_history":chat_history
+                }
+                
+                # 3.流式调用
+                for token in chain.stream(input_data):
+                    full_answer += token
+                    yield token #输出给前端
+                    time.sleep(0.01)    #模拟打字机效果
+                    
+                    
+                # 异常捕获 + 保存对话记忆
             except Exception as e:
-                logger.error(f"模型调用失败：{str(e)}")
-                yield f"抱歉，模型调用出错了{str(e)[:50]}"
+                logger.error(f"模型调用失败：{e}")
+                yield f"抱歉，模型调用出错了：{str(e)[:50]}"
+                
             finally:
-                # 5. 保存记忆
+                # 必须保存对话
                 try:
-                    # 支持上下文理解
-                    memory.add_message("assistant", full_answer or "无回答")
-                   
+                    memory.save_context(
+                        {"question": question},
+                        {"response": full_answer or "无回答"}
+                    )
                 except:
                     pass
-        return StreamingResponse(gen(), media_type="text/plain")
-    
+                
+        # 返回流式响应
+        return StreamingResponse(generate(), media_type = "text/plain")              
     except Exception as e:
-        logger.error(f"接口异常{str(e)}")
-        return StreamingResponse(iter([f"接口出错：{str(e)}"]), media_type = "text/plain")
+        logger.error(f"接口异常：{e}")
+        return StreamingResponse(iter([f"接口出错：{str(e)}"]),media_type = "text/plain")
 
-
-# 清空记忆接口(只清空当前会话)
+# 清空历史会话( LangChian 版)
 @router.post("/clear_history")
 async def clear_history(request: Request):
-    data = await request.json()
-    session_id = data.get("session_id", "default")
+    try:
+        # 1.等待前端传来的 json
+        data = await request.json()
+        
+        # 2.取出 session_id ，没有就用默认值
+        session_id = data.get("session_id","default")
+        
+        # 根据 session_id 获取记忆实例
+        memory = get_conversation_memory(session_id)
+        
+        #清空该会话的所用历史 
+        memory.clear()
+        
+        # 返回结构化结果
+        return {"status": "success", "msg":"对话已清空"}
+    except Exception as e:
+        return {"status": "error", "msg": f"清空失败：{str(e)}"}
     
-    # 只清空当前会话
-    memory = ConversationMemory(session_id=session_id)
-    memory.clear()
-    return {"status": "success", "msg": "对话已清空"}# ========================

@@ -59,3 +59,11 @@ chroma/
 
 # 历史文件
 old/
+
+# 备份文件
+*.backup
+archive/
+
+# 数据库文件
+conversation.db
+conversation.db-journal

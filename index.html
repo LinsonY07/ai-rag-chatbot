@@ -475,26 +475,36 @@
                 chatBox.scrollTop = chatBox.scrollHeight;
             }
 
+            // 解析 ###SOURCE### 标记
             let parts = fullText.split("###SOURCE###");
-            let answer = parts[0] || "";
-            let sources = parts.slice(1) || [];
+            let answer = (parts[0] || "").trim();
+            let sourceText = parts.slice(1).join("###SOURCE###").trim();
 
             assistantContent.textContent = answer;
 
-            if (answer.includes("暂无相关信息，无法回答")) {
-                return;
-            }
-
-            if (sources.length > 0 && sources[0].trim() !== "") {
+            // 如果有来源，渲染来源框
+            if (sourceText) {
+            // 按行分割来源
+            let sourceLines = sourceText.split("\n").filter(s => s.trim());
+            // 过滤出真正包含文件名的行
+            let validSources = sourceLines.filter(s => 
+                s.includes(".docx") || s.includes(".pdf") || 
+                s.includes(".txt") || s.includes(".md") || 
+                s.includes(".xlsx")
+            );
+            
+            if (validSources.length > 0) {
                 let sourceHtml = `<div class="source-block"><strong>📚 参考来源：</strong><br>`;
-                sources.forEach(s => {
-                    if (s.trim()) {
-                        sourceHtml += `• ${s.trim()}<br>`;
-                    }
+                validSources.forEach(s => {
+                    s = s.replace(/^[\s•\-\*1-9\.]+/, "").trim();
+                    if (s) sourceHtml += `• ${s}<br>`;
                 });
                 sourceHtml += `</div>`;
                 assistantContent.innerHTML += sourceHtml;
             }
+        }
+
+
 
         } catch (error) {
             loadingDiv.remove();

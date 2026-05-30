@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # ===================== 1. 通义千问模型配置 =====================
     dashscope_api_key : str = os.getenv("DASHSCOPE_API_KEY")
     embedding_model: str = "text-embedding-v1"
-    llm_model: str = "qwen-turbo"
+    llm_model: str = "qwen-max"
 
     # ===================== 2. RAG 系统配置 =====================
     # 向量数据库配置

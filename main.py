@@ -10,7 +10,7 @@ from utils.logger import logger
 from core.rag import process_single_file
 from db.chroma_client import get_chroma_collection
 from core.conversation import ConversationMemory
-
+from contextlib import asynccontextmanager
 
 app = FastAPI(title="RAG智能问答系统")
 
@@ -128,8 +128,9 @@ app.include_router(router)
 app.mount("/", StaticFiles(directory="./", html=True), name="static")
 
 # ==================== 启动事件 ==================== 
-@app.on_event("startup")
-async def startup_event():
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     logger.info("=" * 50)
     logger.info("RAG 智能问答系统启动成功！")
     logger.info(f"访问地址: http://{settings.host}:{settings.port}/index.html")

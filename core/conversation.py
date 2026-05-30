@@ -67,13 +67,18 @@ class ConversationMemory:
             return
         try:
             c = conn.cursor()
-
-            # 插入数据(加上会话ID)
-            # ? 是占位符，防止SQL注入，安全写法
+        
+        # 检查是否已存在相同内容
+            c.execute("SELECT * FROM chat_history WHERE session_id = ? AND role = ? AND content = ?",
+                  (self.session_id, role, content))
+            if c.fetchone():
+                return  # 已存在相同内容，直接返回
+        
+        # 插入数据
             c.execute(
-                "INSERT INTO chat_history (session_id, role, content) VALUES (?, ?, ?)",
-                (self.session_id, role, content)
-            )
+            "INSERT INTO chat_history (session_id, role, content) VALUES (?, ?, ?)",
+            (self.session_id, role, content)
+        )
             conn.commit()
         except Exception as e:
             logger.error(f"❌ 保存对话到数据库失败：{e}")
@@ -103,10 +108,11 @@ class ConversationMemory:
 
     def add_message(self, role: str, content: str):
         """添加一条消息到历史记录"""
-        self.history.append({"role":role, "content":content})
+        if not any(msg["content"] == content for msg in self.history):
+            self.history.append({"role":role, "content":content})
 
-        # 同时加到数据库
-        self._save_to_db(role, content)
+            # 同时加到数据库
+            self._save_to_db(role, content)
 
         # 如果超过最大轮数，就删除最旧的对话
         if len(self.history) > self.max_turns * 2:

@@ -1,5 +1,7 @@
-# 📚 RAG 智能问答助手（最终完整版）
-一个基于 **FastAPI + Chroma 向量数据库 + 通义千问** 构建的 **企业级私有知识库 RAG 系统**。
+# 📚 RAG 智能问答助手（LangChain 完整版）
+
+一个基于 **FastAPI + LangChain + Chroma 向量数据库 + 通义千问** 构建的 **企业级私有知识库 RAG 系统**。
+
 支持多格式文档全自动解析入库、流式问答、对话记忆持久化、文件管理、深色模式、上传进度条，是完整可交付的毕设/课程设计项目。
 
 ---
@@ -8,7 +10,7 @@
 - **多格式文档全自动解析**  
   支持 `.txt` / `.md` / `.pdf` / `.docx` / `.xlsx` 5 种格式一键上传解析。
 - **精准检索 + 参考来源可追溯**  
-  向量检索 + 关键词重排，回答自动标注来源文档，杜绝模型幻觉。
+  向量检索 + 重排，回答自动标注来源文档，杜绝模型幻觉。
 - **对话记忆持久化（刷新不丢失）**  
   基于 SQLite 存储，支持多会话隔离，关闭浏览器再打开记录仍在。
 - **完善的文件管理系统**  
@@ -16,11 +18,13 @@
 - **流式打字机效果响应**  
   回答逐字输出，交互体验接近商用大模型。
 - **优雅兜底逻辑**  
-  知识库无相关内容时返回固定提示，绝不编造答案。
+  知识库无相关内容时明确告知，绝不编造答案。
 - **精美前端界面**  
   浅色 / 深色双主题切换、**聊天时间戳**、自适应布局、加载动画。
 - **高健壮性**  
   修复 Windows 下 Excel 文件占用无法删除问题，异常全面捕获。
+- **LangChain 框架集成**  
+  使用 LangChain 统一接口，支持 TextSplitter、Retriever、PromptTemplate、Runnable Pipeline 等核心组件。
 
 ---
 
@@ -32,8 +36,9 @@
 | 嵌入模型 | 通义千问 Text Embedding |
 | 大语言模型 | 通义千问 LLM |
 | 对话存储 | SQLite（自动创建） |
-| 文档解析 | PyPDF2 / python-docx / openpyxl |
+| 文档解析 | PyPDF2 / pdfplumber / python-docx / openpyxl |
 | 前端 | HTML + CSS + JavaScript（原生） |
+| 框架集成 | LangChain（TextSplitter / Retriever / PromptTemplate / Runnable） |
 
 ---
 
@@ -41,24 +46,28 @@
 ```
 ai_daima/
 ├── api/                  # 接口路由模块
-│   └── routes.py
+│   └── routes.py         # LangChain 版本
 ├── core/                 # 核心业务
-│   ├── rag.py            # RAG 检索问答
-│   └── conversation.py   # 对话记忆（持久化+多会话）
+│   ├── rag.py            # 原始版本（保留参考）
+│   ├── rag_langchain.py  # LangChain 版本
+│   └── conversation.py   # 对话记忆（持久化 + 多会话）
 ├── db/                   # 数据库
-│   └── chroma_client.py   # 向量库操作
+│   └── chroma_client.py  # 向量库操作
 ├── utils/                # 工具集
 │   ├── config.py         # 配置
 │   ├── logger.py         # 日志
-│   ├── parsers.py         # 文档解析器（5 格式）
-│   └── file_loader.py     # 文件加载
+│   ├── langchain_adapters.py  # LangChain 组件适配
+│   ├── langchain_memory.py    # LangChain 记忆适配
+│   ├── llm_chain.py      # LLM 适配器
+│   └── parsers.py        # 文档解析器
 ├── uploads/              # 上传文件目录（自动生成）
-├── chroma_db/             # 向量库（自动生成）
-├── conversation.db        # 对话历史库（自动生成）
-├── main.py                # 项目入口
-├── ingest.py              # 文档批量入库
-├── index.html             # 前端界面（完整版）
-└── requirements.txt       # 依赖
+├── chroma_db/            # 向量库（自动生成）
+├── conversation.db       # 对话历史库（自动生成）
+├── main.py               # 项目入口
+├── ingest.py             # 文档批量入库
+├── index.html            # 前端界面（完整版）
+├── README.md             # 本文件
+└── requirements.txt      # 依赖
 ```
 
 ---
@@ -80,7 +89,7 @@ pip install -r requirements.txt
 ### 2. 配置 API Key
 创建 `.env` 文件：
 ```env
-DASHSCOPE_API_KEY=你的通义千问API Key
+DASHSCOPE_API_KEY=你的通义千问 API Key
 EMBEDDING_MODEL=text-embedding-v1
 CHROMA_DB_PATH=./chroma_db
 ```
@@ -98,6 +107,7 @@ http://127.0.0.1:8000/index.html
 ---
 
 ## 📖 已实现完整功能清单
+
 ### 1. 文档管理
 ✅ 支持 TXT / MD / PDF / DOCX / XLSX 5 种格式  
 ✅ 文件上传、解析、向量入库一体化  
@@ -108,9 +118,9 @@ http://127.0.0.1:8000/index.html
 ### 2. 智能问答
 ✅ 基于私有知识库检索增强  
 ✅ **流式打字机输出**  
-✅ 自动显示参考来源  
+✅ 自动显示参考来源（只有真正参考文档时才显示）  
 ✅ 无结果时返回固定提示  
-✅ 上下文理解
+✅ 上下文理解（多轮对话）
 
 ### 3. 对话记忆
 ✅ SQLite 持久化，刷新页面不丢失
@@ -124,9 +134,18 @@ http://127.0.0.1:8000/index.html
 ✅ 加载动画  
 ✅ 友好错误提示
 
+### 5. LangChain 集成
+✅ RecursiveCharacterTextSplitter 文本分块  
+✅ Chroma VectorStore 向量存储  
+✅ Retriever 检索抽象层  
+✅ ContextualCompressionRetriever 重排检索  
+✅ ChatPromptTemplate 结构化 Prompt  
+✅ Runnable Pipeline 流程编排  
+✅ LangChain Memory 对话记忆适配
+
 ---
 
-## 🧪 测试场景（全部通过）
+##  测试场景（全部通过）
 | 测试场景 | 预期结果 |
 |----------|----------|
 | 空知识库提问 | 返回固定提示，不编造 |
@@ -136,6 +155,8 @@ http://127.0.0.1:8000/index.html
 | 多次点击上传 | 防重复提交生效 |
 | 切换深色模式 | 界面正常渲染 |
 | 清空对话 | 数据库同步清空 |
+| 多轮对话（模糊指代） | 正确识别上下文 |
+| 无参考文档的问题 | 不显示假来源 |
 
 ---
 
@@ -145,6 +166,7 @@ http://127.0.0.1:8000/index.html
 - 模块化架构，易维护、易扩展
 - 无第三方付费服务，API Key 即可运行
 - 适合：**课程设计 / 毕业设计 / 个人知识库 / 企业内部问答**
+- **LangChain 框架学习项目**：通过逐步替换原有代码，深入理解 LangChain 核心组件
 
 ---
 
@@ -153,4 +175,3 @@ http://127.0.0.1:8000/index.html
 - 首次运行会自动创建数据库目录
 - `uploads/` 存放上传文件，`chroma_db/` 为向量库
 - 支持 Windows / macOS 全平台运行
-
